@@ -28,7 +28,7 @@ spin = 2 * np.random.rand(dim).astype(np.float32) - 1
 spin = ctplib.as_ctypes(spin)
 qubo = ctplib.as_ctypes(qubo)
 
-sbm = cdll.LoadLibrary("./lib/sbm_cu.so")
+sbm = cdll.LoadLibrary("./lib/sbm_c.so")
 
 main = sbm.iterate
 

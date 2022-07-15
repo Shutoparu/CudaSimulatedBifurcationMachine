@@ -49,9 +49,9 @@ void update(float* spin, float* momentum, float* qubo, int dim, int step, float 
         }
         momentum[i] += TIME_STEP * ((pressure - DETUNING_FREQUENCY) * spin[i] + xi0 * dot_product);
         spin[i] += TIME_STEP * DETUNING_FREQUENCY * momentum[i];
-        printf("%s", spin[i] > 0 ? "+" : "-");
+        // printf("%s", spin[i] > 0 ? "+" : "-");
     }
-    printf("\n");
+    // printf("\n");
 
 
 }
@@ -101,7 +101,7 @@ int sameSpin(float* spin1, float* spin2, int dim) {
     for (int i = 0; i < dim; i++) {
         sameCount += spin1[i] * spin2[i] > 0 ? 1 : 0;
     }
-    printf("--not same count: %d--", dim - sameCount);
+    // printf("--not same count: %d--", dim - sameCount);
     return dim - sameCount;
 }
 
@@ -158,7 +158,7 @@ extern void iterate(float* spin, float* qubo, int dim, int window, int maxStep) 
                 memcpy(sample[i / window], spin, dim * sizeof(float));
                 if (i != 0) {
                     sameSpin(sample[i / window], sample[i / window - 1], dim) == 0 ? (repeatNum++) : (repeatNum = 0);
-                    printf("\trepeatNum: %d\n", repeatNum);
+                    // printf("\trepeatNum: %d\n", repeatNum);
                     if (repeatNum == TARGET_REPEAT) {
                         printf("meet criteria at step = %d\n", i);
                         break;
