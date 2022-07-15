@@ -3,9 +3,10 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define TARGET_REPEAT 50
+#define TARGET_REPEAT 100 // i
 #define TIME_STEP 0.01
 #define PRESSURE_SLOPE 0.01
+#define MAX_PRESSURE 1
 #define DETUNING_FREQUENCY 1
 #define HEAT_PARAMETER 0.06
 
@@ -40,15 +41,16 @@ float stddiv(float* arr, int size) {
  * @param xi0
  */
 void update(float* spin, float* momentum, float* qubo, int dim, int step, float xi0) {
+    float pressure = PRESSURE_SLOPE * TIME_STEP * step;
+    // float pressure = MAX_PRESSURE;
+    // pressure = pressure > MAX_PRESSURE ? MAX_PRESSURE : pressure;
     for (int i = 0; i < dim; i++) {
-        momentum[i] += TIME_STEP * (PRESSURE_SLOPE * TIME_STEP * step - DETUNING_FREQUENCY) * spin[i];
-        spin[i] += TIME_STEP * (PRESSURE_SLOPE * TIME_STEP * step + DETUNING_FREQUENCY - xi0 * qubo[i * dim + i]) * momentum[i];
-
         float dot_product = 0;
         for (int j = 0; j < dim; j++) {
-            dot_product += qubo[i * dim + j] * spin[j];
+            dot_product += qubo[i * dim + j] * (spin[j] > 0 ? 1 : (spin[j] < 0 ? -1 : 0));
         }
-        momentum[i] += TIME_STEP * (xi0 * dot_product + HEAT_PARAMETER * momentum[i]);
+        momentum[i] += TIME_STEP * ((pressure - DETUNING_FREQUENCY) * spin[i] + xi0 * dot_product);
+        spin[i] += TIME_STEP * DETUNING_FREQUENCY * momentum[i];
     }
 }
 
@@ -68,7 +70,19 @@ void confine(float* spin, float* momentum, int dim) {
             momentum[i] = 0;
         }
     }
+}
 
+/**
+ * @brief
+ *
+ * @param momentum
+ * @param pastMomentum
+ * @param dim
+ */
+void heatUp(float* momentum, float* pastMomentum, int dim) {
+    for (int i = 0; i < dim; i++) {
+        momentum[i] += pastMomentum[i] * TIME_STEP * HEAT_PARAMETER;
+    }
 }
 
 /**
@@ -84,7 +98,8 @@ int sameSpin(float* spin1, float* spin2, int dim) {
     for (int i = 0; i < dim; i++) {
         sameCount += spin1[i] * spin2[i] > 0 ? 1 : 0;
     }
-    return sameCount - dim;
+    printf("--not same count: %d--", dim - sameCount);
+    return dim - sameCount;
 }
 
 /**
@@ -104,6 +119,12 @@ extern void iterate(float* spin, float* qubo, int dim, int window, int maxStep) 
 
     float* momentum;
     momentum = (float*)malloc(dim * sizeof(float));
+    for (int i = 0; i < dim; i++) {
+        momentum[i] = 2 * (rand() / (float)RAND_MAX) - 1;
+    }
+    float* pastMomentum;
+    pastMomentum = (float*)malloc(dim * sizeof(float));
+
 
     float xi0;
     xi0 = (0.7 * DETUNING_FREQUENCY) / stddiv(qubo, dim * dim) * sqrt(dim);
@@ -116,23 +137,27 @@ extern void iterate(float* spin, float* qubo, int dim, int window, int maxStep) 
         }
     }
 
-    int repeatNum = 0;
-
     if (window == 0) {
         for (int i = 0; i < maxStep; i++) {
+            memcpy(pastMomentum, momentum, dim * sizeof(float));
             update(spin, momentum, qubo, dim, i, xi0);
             confine(spin, momentum, dim);
+            heatUp(momentum, pastMomentum, dim);
         }
     } else {
+        int repeatNum = 0;
         for (int i = 0; i < maxStep; i++) {
+            memcpy(pastMomentum, momentum, dim * sizeof(float));
             update(spin, momentum, qubo, dim, i, xi0);
             confine(spin, momentum, dim);
+            heatUp(momentum, pastMomentum, dim);
             if (i % window == 0) {
                 memcpy(sample[i / window], spin, dim * sizeof(float));
                 if (i != 0) {
-                    int checkRepeat = sameSpin(sample[i / window], sample[i / window - 1], dim);
-                    repeatNum += sameSpin == 0 ? 1 : -repeatNum;
+                    sameSpin(sample[i / window], sample[i / window - 1], dim) == 0 ? (repeatNum++) : (repeatNum = 0);
+                    printf("\trepeatNum: %d\n", repeatNum);
                     if (repeatNum == TARGET_REPEAT) {
+                        printf("meet criteria at step = %d\n", i);
                         break;
                     }
                 }
