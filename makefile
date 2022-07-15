@@ -4,5 +4,5 @@ main: lib/sbm.so
 subMain: lib/sbm.so
 	python3 subMain.py
 
-lib/sbm.so: sbm.c
-	nvcc --compiler-options -fPIC -shared sbm.c -o lib/sbm.so
+lib/sbm.so: sbm.cu
+	nvcc --compiler-options -fPIC -shared sbm.cu -o lib/sbm.so

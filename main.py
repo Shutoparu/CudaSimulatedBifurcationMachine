@@ -4,8 +4,8 @@ from ctypes import c_float, c_int, cdll, POINTER
 import time
 
 np.random.seed(1)
-dim = 15
-window = 250
+dim = 30
+window = 100
 maxStep = 100000
 qubo = 2 * np.random.rand(dim, dim).astype(np.float32) - 1
 qubo = (qubo + qubo.T) / 2
