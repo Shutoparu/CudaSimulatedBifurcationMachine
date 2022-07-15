@@ -4,7 +4,7 @@ from ctypes import c_float, c_int, cdll, POINTER
 import time
 
 np.random.seed(1)
-dim = 300
+dim = 750
 window = 50
 maxStep = 100000
 qubo = 2 * np.random.rand(dim, dim).astype(np.float32) - 1
@@ -60,5 +60,5 @@ print("\nspent time: ", end-start)
 
 # # test code
 # binary = np.expand_dims(binary, axis=1)
-# print( - binary.T @ qubo @ binary)
+# print( -0.5 * binary.T @ qubo @ binary)
 # # test code

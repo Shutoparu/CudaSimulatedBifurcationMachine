@@ -5,17 +5,27 @@
 #include <curand_kernel.h>
 
 #define TARGET_REPEAT 35 // # of repeats required to stop iterating
-#define TIME_STEP 0.01 // a constant that stands for time discretization
+#define TIME_STEP 0.1 // a constant that stands for time discretization
 #define PRESSURE_SLOPE 0.01 // pumping pressure's linear slope allowing adiabatic evolution
 #define DETUNING_FREQUENCY 1 // detuning frequency of the Hamiltonian
 #define HEAT_PARAMETER 0.06 // heat parameter for the heated algorithm
 
-__global__ void dot(float* product, float* qubo, float* spin, int dim) {
+texture<float, 1, cudaReadModeElementType> qubo_tex;
+texture<float, 1, cudaReadModeElementType> pressure_tex;
+
+__global__ void setPressure(float* pressure, int dim) {
+    int id = blockDim.x * blockIdx.x + threadIdx.x;
+    if (id < dim) {
+        pressure[id] = id * DETUNING_FREQUENCY / (float)dim;
+    }
+}
+
+__global__ void dot(float* product, float* spin, int dim) {
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id < dim) {
         product[id] = 0;
         for (int i = 0; i < dim; i++) {
-            product[id] += qubo[id * dim + i] * (spin[i] > 0 ? 1 : (spin[i] < 0 ? -1 : 0));
+            product[id] += tex1Dfetch(qubo_tex, id * dim + i) * (spin[i] > 0 ? 1 : (spin[i] < 0 ? -1 : 0));
         }
     }
 }
@@ -62,24 +72,9 @@ float stddiv(float* arr, int size) {
 __global__ void update(float* spin, float* momentum, float* dot_product, int dim, int step, float xi0) {
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id < dim) {
-        float pressure = PRESSURE_SLOPE * TIME_STEP * step;
-        momentum[id] += TIME_STEP * ((pressure - DETUNING_FREQUENCY) * spin[id] + xi0 * dot_product[id]);
+        momentum[id] += TIME_STEP * ((tex1Dfetch(pressure_tex, step) - DETUNING_FREQUENCY) * spin[id] + xi0 * dot_product[id]);
         spin[id] += TIME_STEP * DETUNING_FREQUENCY * momentum[id];
     }
-    // float pressure = PRESSURE_SLOPE * TIME_STEP * step;
-
-    // for (int i = 0; i < dim; i++) {
-    //     float dot_product = 0;
-    //     for (int j = 0; j < dim; j++) {
-    //         dot_product += qubo[i * dim + j] * (spin[j] > 0 ? 1 : (spin[j] < 0 ? -1 : 0));
-    //     }
-    //     momentum[i] += TIME_STEP * ((pressure - DETUNING_FREQUENCY) * spin[i] + xi0 * dot_product);
-    //     spin[i] += TIME_STEP * DETUNING_FREQUENCY * momentum[i];
-    //     // printf("%s", spin[i] > 0 ? "+" : "-");
-    // }
-    // // printf("\n");
-
-
 }
 
 /**
@@ -130,7 +125,7 @@ int sameSpin(float* spin1, float* spin2, int dim) {
         sameCount += spin1[i] * spin2[i] > 0 ? 1 : 0;
     }
     // printf("--not same count: %d--", dim - sameCount);
-    return dim - sameCount;
+    return sameCount;
 }
 
 extern "C" {
@@ -153,9 +148,16 @@ void iterate(float* spin, float* qubo, int dim, int window, int maxStep) {
         exit(-1);
     }
 
+    int device;
+    cudaGetDevice(&device);
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, device);
+    int threads = prop.maxThreadsPerBlock;
+
+
     float* momentum;
     cudaMalloc(&momentum, dim * sizeof(float));
-    initRand << <50, 50 >> > (momentum, dim);
+    initRand << <50, threads >> > (momentum, dim);
     float* pastMomentum;
     cudaMalloc(&pastMomentum, dim * sizeof(float));
     cudaDeviceSynchronize();
@@ -181,45 +183,54 @@ void iterate(float* spin, float* qubo, int dim, int window, int maxStep) {
     float* qubo_dev;
     cudaMalloc(&qubo_dev, dim * dim * sizeof(float));
     cudaMemcpy(qubo_dev, qubo, dim * dim * sizeof(float), cudaMemcpyHostToDevice);
+    cudaBindTexture(0, qubo_tex, qubo_dev, dim * dim * sizeof(float));
+
+    float* pressure;
+    cudaMalloc(&pressure, dim * sizeof(float));
+    setPressure << <50, threads >> > (pressure, dim);
+    cudaBindTexture(0, pressure_tex, pressure, dim * sizeof(float));
 
     if (window == 0) {
         for (int i = 0; i < maxStep; i++) {
             cudaMemcpy(pastMomentum, momentum, dim * sizeof(float), cudaMemcpyDeviceToDevice);
-            dot << <50, 50 >> > (dot_product, qubo_dev, spin_dev, dim);
-            cudaDeviceSynchronize();
-            update << <50, 50 >> > (spin_dev, momentum, dot_product, dim, i, xi0);
+            dot << <50, threads >> > (dot_product, spin_dev, dim);
+            // cudaDeviceSynchronize();
+            update << <50, threads >> > (spin_dev, momentum, dot_product, dim, i, xi0);
             //cudaDeviceSynchronize();
-            confine << <50, 50 >> > (spin_dev, momentum, dim);
+            confine << <50, threads >> > (spin_dev, momentum, dim);
             //cudaDeviceSynchronize();
-            heatUp << <50, 50 >> > (momentum, pastMomentum, dim);
+            heatUp << <50, threads >> > (momentum, pastMomentum, dim);
             cudaDeviceSynchronize();
         }
     } else {
         int repeatNum = 0;
         for (int i = 0; i < maxStep; i++) {
             cudaMemcpy(pastMomentum, momentum, dim * sizeof(float), cudaMemcpyDeviceToDevice);
-            dot << <50, 50 >> > (dot_product, qubo_dev, spin_dev, dim);
+            dot << <50, threads >> > (dot_product, spin_dev, dim);
+            // cudaDeviceSynchronize();
+            update << <50, threads >> > (spin_dev, momentum, dot_product, dim, i, xi0);
+            // cudaDeviceSynchronize();
+            confine << <50, threads >> > (spin_dev, momentum, dim);
+            // cudaDeviceSynchronize();
+            heatUp << <50, threads >> > (momentum, pastMomentum, dim);
             cudaDeviceSynchronize();
-            update << <50, 50 >> > (spin_dev, momentum, dot_product, dim, i, xi0);
-            // cudaDeviceSynchronize();
-            confine << <50, 50 >> > (spin_dev, momentum, dim);
-            // cudaDeviceSynchronize();
-            heatUp << <50, 50 >> > (momentum, pastMomentum, dim);
             if (i % window == 0) {
                 cudaMemcpy(sample[i / window], spin_dev, dim * sizeof(float), cudaMemcpyDeviceToHost);
                 if (i != 0) {
-                    sameSpin(sample[i / window], sample[i / window - 1], dim) == 0 ? (repeatNum++) : (repeatNum = 0);
+                    sameSpin(sample[i / window], sample[i / window - 1], dim) == dim ? (repeatNum++) : (repeatNum = 0);
                     if (repeatNum == TARGET_REPEAT) {
                         // printf("meet criteria at step = %d\n", i);
                         break;
                     }
                 }
             }
-            cudaDeviceSynchronize();
         }
     }
 
     cudaMemcpy(spin, spin_dev, dim * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaUnbindTexture(&qubo_tex);
+    cudaUnbindTexture(&pressure_tex);
 
     if (window != 0) {
         for (int i = 0; i < maxStep / window + 1; i++) {
@@ -232,11 +243,12 @@ void iterate(float* spin, float* qubo, int dim, int window, int maxStep) {
     cudaFree(dot_product);
     cudaFree(momentum);
     cudaFree(pastMomentum);
+    cudaFree(pressure);
 }
 
 int main() {
 
-    float spin[] = { 0.5f,-0.5f };
+    float spin[] = { 0.0f,0.0f };
     float qubo[] = { 0.0f, 1.0f, 1.0f, 0.0f };
     int dim = 2;
     int window = 0;
