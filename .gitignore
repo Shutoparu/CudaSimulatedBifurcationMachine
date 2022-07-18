@@ -1,4 +1,6 @@
 .vscode
-bin/*
-lib/*
+bin/
+lib/
 qubo.txt
+small_sample.txt
+__pycache__/

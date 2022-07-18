@@ -9,7 +9,6 @@ window = 50
 maxStep = 100000
 qubo = 2 * np.random.rand(dim, dim).astype(np.float32) - 1
 qubo = (qubo + qubo.T) / 2
-np.savetxt("qubo.txt", qubo)
 # quit()
 qubo = qubo.flatten()
 np.random.seed()

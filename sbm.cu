@@ -4,9 +4,8 @@
 #include <math.h>
 #include <curand_kernel.h>
 
-#define TARGET_REPEAT 35 // # of repeats required to stop iterating
+#define TARGET_REPEAT 50 // # of repeats required to stop iterating
 #define TIME_STEP 0.1 // a constant that stands for time discretization
-#define PRESSURE_SLOPE 0.01 // pumping pressure's linear slope allowing adiabatic evolution
 #define DETUNING_FREQUENCY 1 // detuning frequency of the Hamiltonian
 #define HEAT_PARAMETER 0.06 // heat parameter for the heated algorithm
 
@@ -124,7 +123,7 @@ int sameSpin(float* spin1, float* spin2, int dim) {
     for (int i = 0; i < dim; i++) {
         sameCount += spin1[i] * spin2[i] > 0 ? 1 : 0;
     }
-    // printf("--not same count: %d--", dim - sameCount);
+    // printf("--not same count: %d--\n", dim - sameCount);
     return sameCount;
 }
 
@@ -152,12 +151,17 @@ void iterate(float* spin, float* qubo, int dim, int window, int maxStep) {
     cudaGetDevice(&device);
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, device);
-    int threads = prop.maxThreadsPerBlock;
 
+    int blocks = 32 * 16;
+    int threads = dim / blocks + 1;
+    while (threads > prop.maxThreadsPerBlock) {
+        blocks *= 2;
+        threads = dim / blocks + 1;
+    }
 
     float* momentum;
     cudaMalloc(&momentum, dim * sizeof(float));
-    initRand << <50, threads >> > (momentum, dim);
+    initRand << <blocks, threads >> > (momentum, dim);
     float* pastMomentum;
     cudaMalloc(&pastMomentum, dim * sizeof(float));
     cudaDeviceSynchronize();
@@ -193,33 +197,33 @@ void iterate(float* spin, float* qubo, int dim, int window, int maxStep) {
     if (window == 0) {
         for (int i = 0; i < maxStep; i++) {
             cudaMemcpy(pastMomentum, momentum, dim * sizeof(float), cudaMemcpyDeviceToDevice);
-            dot << <50, threads >> > (dot_product, spin_dev, dim);
+            dot << <blocks, threads >> > (dot_product, spin_dev, dim);
             // cudaDeviceSynchronize();
-            update << <50, threads >> > (spin_dev, momentum, dot_product, dim, i, xi0);
+            update << <blocks, threads >> > (spin_dev, momentum, dot_product, dim, i, xi0);
             //cudaDeviceSynchronize();
-            confine << <50, threads >> > (spin_dev, momentum, dim);
+            confine << <blocks, threads >> > (spin_dev, momentum, dim);
             //cudaDeviceSynchronize();
-            heatUp << <50, threads >> > (momentum, pastMomentum, dim);
+            heatUp << <blocks, threads >> > (momentum, pastMomentum, dim);
             cudaDeviceSynchronize();
         }
     } else {
         int repeatNum = 0;
         for (int i = 0; i < maxStep; i++) {
             cudaMemcpy(pastMomentum, momentum, dim * sizeof(float), cudaMemcpyDeviceToDevice);
-            dot << <50, threads >> > (dot_product, spin_dev, dim);
+            dot << <blocks, threads >> > (dot_product, spin_dev, dim);
             // cudaDeviceSynchronize();
-            update << <50, threads >> > (spin_dev, momentum, dot_product, dim, i, xi0);
+            update << <blocks, threads >> > (spin_dev, momentum, dot_product, dim, i, xi0);
             // cudaDeviceSynchronize();
-            confine << <50, threads >> > (spin_dev, momentum, dim);
+            confine << <blocks, threads >> > (spin_dev, momentum, dim);
             // cudaDeviceSynchronize();
-            heatUp << <50, threads >> > (momentum, pastMomentum, dim);
+            heatUp << <blocks, threads >> > (momentum, pastMomentum, dim);
             cudaDeviceSynchronize();
             if (i % window == 0) {
                 cudaMemcpy(sample[i / window], spin_dev, dim * sizeof(float), cudaMemcpyDeviceToHost);
                 if (i != 0) {
                     sameSpin(sample[i / window], sample[i / window - 1], dim) == dim ? (repeatNum++) : (repeatNum = 0);
                     if (repeatNum == TARGET_REPEAT) {
-                        // printf("meet criteria at step = %d\n", i);
+                        printf("meet criteria at step = %d\n", i);
                         break;
                     }
                 }

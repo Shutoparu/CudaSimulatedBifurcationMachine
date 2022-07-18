@@ -1,68 +1,113 @@
+import string
 import numpy as np
 import numpy.ctypeslib as ctplib
 from ctypes import c_float, c_int, cdll, POINTER
 import time
 
-time0 = time.time()
 
-np.random.seed(1)
-dim = 40000
-window = 0
-maxStep = 100
-qubo = 2 * np.random.rand(dim, dim).astype(np.float32) - 1
-qubo = (qubo + qubo.T) / 2
-qubo = qubo.flatten()
-np.random.seed()
-spin = 2 * np.random.rand(dim).astype(np.float32) - 1
+class SBM:
 
-time1 = time.time()
-# # test code
-# dim = 2
-# window = 10
-# maxStep = 1000
-# qubo = np.array([[0,1],[1,0]]).astype(np.float32)
-# qubo = qubo.flatten()
-# spin = 2 * np.random.rand(dim).astype(np.float32) - 1
-# spin = np.array([.0,.0]).astype(np.float32)
-# # test code
+    '''
+    Attributes:
+    qubo : np.ndarray
+        the qubo matrix in 2D
+    init_spin : np.ndarray
+        the initial spin in 1D
+    maxStep : int
+        the maximum steps for the algorithm
+    window : int
+        the usage of sampling method
+    dim : int
+        the dimention of the spin array
+    time : float
+        the time spent on the last execution of the algorithm. default value 0 is set
+    '''
 
-spin = ctplib.as_ctypes(spin)
-qubo = ctplib.as_ctypes(qubo)
+    def __init__(
+        self,
+        qubo: np.ndarray = np.array([[0, 1], [1, 0]]),
+        spin: np.ndarray = None,
+        maxStep: int = 10000,
+        window: int = 0
+    ) -> None:
+        '''
+        Parameters:
+        qubo : np.ndarray
+            the qubo matrix in 2D. elements will be parsed to np.float32 which is equivalent to "float" in C. default qubo matrix [[0,1],[1,0]] is used.
+        init_spin : np.ndarray | None
+            the initial spin in 1D with values between {-1,1}. elements will be parsed to np.float32 which is equivalent to "float" in C. if none then a random initial spin is generated
+        maxStep : int
+            the maximum steps for the algorithm. default value 10,000 is used
+        window : int
+            the usage of sampling method. default value 0 is used, which disables the use of sampling method.
+        '''
 
-sbm = cdll.LoadLibrary("./lib/sbm_cu.so")
+        self.qubo = qubo.astype(np.float32)
+        self.maxStep = maxStep
+        self.window = window
 
-main = sbm.iterate
+        if np.shape(self.qubo)[0] != np.shape(self.qubo)[1]:
+            print("qubo is not a square matrix")
+            exit(-1)
+        self.dim = np.shape(self.qubo)[0]
 
-main.argtypes = [POINTER(c_float), POINTER(c_float), c_int, c_int, c_int]
-# main.restype = c_float
+        if(type(spin) == type(None)):
+            self.spin = 2 * np.random.rand(self.dim).astype(np.float32) -1
+        else:
+            self.spin = spin.astype(np.float32)
+        
+        if np.shape(self.qubo)[0] != np.shape(self.spin)[0]:
+            print("qubo dimention and spin dimention mismatch")
+            exit(-1)
+        self.time = 0
 
-start = time.time()
-# energy = main(spin, qubo, dim, window, maxStep)
+    def run(self) -> None:
 
-main(spin, qubo, dim, window, maxStep)
+        spin = ctplib.as_ctypes(self.spin)
+        qubo = ctplib.as_ctypes(self.qubo.flatten())
 
-end = time.time()
+        sbm = cdll.LoadLibrary("./lib/sbm_cu.so")
+
+        main = sbm.iterate
+
+        main.argtypes = [POINTER(c_float), POINTER(
+            c_float), c_int, c_int, c_int]
+
+        start = time.time()
+
+        main(spin, qubo, self.dim, self.window, self.maxStep)
+
+        end = time.time()
+
+        self.time = end-start
+
+        spin = ctplib.as_array(spin)
+        self.spin = np.sign(spin)
+
+    def getSpinSign(self) -> str:
+        spin = np.expand_dims(self.spin, axis=1).T[0].tolist()
+        returnString = ""
+        for i in range(self.dim):
+            returnString += ("+" if spin[i] ==
+                             1 else ("-" if spin[i] == -1 else "#"))
+        return returnString
+
+    def isingEnergy(self) -> float:
+        spin = np.expand_dims(self.spin, axis=1)
+        return -.5* (spin.T @ self.qubo @ spin)[0][0]
 
 
-# spin = ctplib.as_array(spin)
-# spin = np.sign(spin)
-# spin = np.expand_dims(spin, axis=1)
+if __name__ == '__main__':
 
-# qubo = np.reshape(qubo, [dim, dim])
+    np.random.seed(1)
+    dim = 10000
+    window = 0
+    maxStep = 1000
+    qubo = 2 * np.random.rand(dim, dim).astype(np.float32) - 1
+    qubo = (qubo + qubo.T) / 2
+    spin = 2 * np.random.rand(dim).astype(np.float32) - 1
 
-# # energy = -.5 * (spin.T @ qubo @ spin)[0][0]
-
-# # print(energy)
-
-# spin = spin.T[0].tolist()
-# for i in range(dim):
-#     print("+" if spin[i] == 1 else ("-" if spin[i] == -1 else 0), sep="", end="")
-
-print("time0 = ",time1-time0)
-print("time1 = ",start-time1)
-print("\nspent time: ", end-start)
-
-# # # test code
-# # binary = np.expand_dims(binary, axis=1)
-# # print( - binary.T @ qubo @ binary)
-# # # test code
+    sbm = SBM(qubo, spin, maxStep, window)
+    sbm.run()
+    print(sbm.time)
+    print(sbm.isingEnergy())
