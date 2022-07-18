@@ -1,4 +1,3 @@
-import string
 import numpy as np
 import numpy.ctypeslib as ctplib
 from ctypes import c_float, c_int, cdll, POINTER
@@ -51,7 +50,7 @@ class SBM:
             exit(-1)
         self.dim = np.shape(self.qubo)[0]
 
-        if(type(spin) == type(None)):
+        if(spin is None):
             self.spin = 2 * np.random.rand(self.dim).astype(np.float32) -1
         else:
             self.spin = spin.astype(np.float32)
