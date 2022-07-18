@@ -1,4 +1,4 @@
-# CudaDigitalAnnealing
+# CudaSimulatedBifurcationMachine
 
 [Code Source](https://github.com/Shutoparu/CudaSimulatedBifurcationMachine)
 

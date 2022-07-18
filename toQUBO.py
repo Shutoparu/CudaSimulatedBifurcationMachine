@@ -469,8 +469,7 @@ if __name__ == '__main__':
     # # QUBO.read_file(file)
 
     init_bin = QUBO.init_bin(capacity, len(Q[0]), bs_num)
-
-    sbm = SBM(Q[2], init_bin, maxStep=1000)
+    sbm = SBM(Q[0], init_bin, maxStep=1000)
     # sbm = SBM(Q[0], maxStep=1000)
     spin2bin = list()
     for i in sbm.spin:

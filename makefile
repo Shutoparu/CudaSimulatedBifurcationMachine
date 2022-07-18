@@ -21,3 +21,6 @@ c: bin/sbm_cu.o
 
 bin/sbm_cu.o: sbm.cu
 	nvcc -o bin/sbm_cu.o sbm.cu
+
+runData: lib/sbm_cu.so
+	python3 toQUBO.py
