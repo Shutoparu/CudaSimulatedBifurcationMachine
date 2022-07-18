@@ -12,6 +12,12 @@
 texture<float, 1, cudaReadModeElementType> qubo_tex;
 texture<float, 1, cudaReadModeElementType> pressure_tex;
 
+/**
+ * @brief Set the Pressure object
+ * 
+ * @param pressure the pressure array to be returned, [0,1)
+ * @param dim the size of the array 
+ */
 __global__ void setPressure(float* pressure, int dim) {
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id < dim) {
@@ -19,6 +25,13 @@ __global__ void setPressure(float* pressure, int dim) {
     }
 }
 
+/**
+ * @brief calculate the dot product of given two arrays
+ * 
+ * @param product the product to be returned
+ * @param spin the spin array
+ * @param dim the dimention of the array
+ */
 __global__ void dot(float* product, float* spin, int dim) {
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id < dim) {
@@ -29,6 +42,12 @@ __global__ void dot(float* product, float* spin, int dim) {
     }
 }
 
+/**
+ * @brief create an array of random numbers between (-1,1)
+ * 
+ * @param arr the array to be returned
+ * @param size the size of the array
+ */
 __global__ void initRand(float* arr, int size) {
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id < size) {
